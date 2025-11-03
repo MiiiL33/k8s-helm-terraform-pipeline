@@ -1,0 +1,44 @@
+name: CI-CD
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT }}
+  GAR_LOCATION: ${{ secrets.GAR_LOCATION }}
+  CLUSTER_NAME: ${{ secrets.GKE_CLUSTER }}
+  CLUSTER_LOCATION: ${{ secrets.GKE_LOCATION }}
+  IMAGE: ${{ secrets.GAR_REPO }}/sample-app
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - uses: google-github-actions/setup-gcloud@v2
+
+    - run: gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev --quiet
+
+    - name: Build and push
+      run: |
+        docker build -t $IMAGE:latest ./app
+        docker push $IMAGE:latest
+
+    - name: Get GKE credentials
+      run: |
+        gcloud container clusters get-credentials $CLUSTER_NAME \
+          --region $CLUSTER_LOCATION \
+          --project $PROJECT_ID
+
+    - name: Helm deploy
+      run: |
+        helm upgrade --install sample-app ./charts/sample-app \
+          --set image.repository=$IMAGE --set image.tag=latest
